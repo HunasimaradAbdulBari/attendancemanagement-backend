@@ -1,0 +1,42 @@
+const jwt = require('jsonwebtoken');
+const Student = require('../models/student');
+const Teacher = require('../models/Teacher');
+const Parent = require('../models/Parent');
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let user;
+
+    switch (decoded.userType) {
+      case 'student':
+        user = await Student.findById(decoded.id).select('-password');
+        break;
+      case 'teacher':
+        user = await Teacher.findById(decoded.id).select('-password');
+        break;
+      case 'parent':
+        user = await Parent.findById(decoded.id).select('-password');
+        break;
+      default:
+        return res.status(401).json({ message: 'Invalid user type' });
+    }
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Token is not valid' });
+    }
+
+    req.user = { ...user.toObject(), userType: decoded.userType };
+    next();
+  } catch (error) {
+    res.status(401).json({ message: 'Token is not valid' });
+  }
+};
+
+module.exports = authMiddleware;
