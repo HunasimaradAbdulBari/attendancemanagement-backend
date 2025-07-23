@@ -3,12 +3,12 @@ const mongoose = require('mongoose');
 const attendanceSchema = new mongoose.Schema({
   student: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Student', // Changed from 'User' to 'Student'
     required: true
   },
   teacher: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Teacher', // Changed from 'User' to 'Teacher'
     required: true
   },
   class: {

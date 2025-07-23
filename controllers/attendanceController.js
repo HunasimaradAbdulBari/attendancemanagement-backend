@@ -1,5 +1,7 @@
 const Attendance = require('../models/Attendance');
-const User = require('../models/User');
+const Student = require('../models/student'); // Note: lowercase 's' as per your file
+const Teacher = require('../models/Teacher');
+const Parent = require('../models/Parent');
 const { sendNotification } = require('../utils/sendNotification');
 
 // Take Attendance (Teacher)
@@ -28,7 +30,7 @@ exports.takeAttendance = async (req, res) => {
 
       // Send notification if student is absent
       if (record.status === 'absent') {
-        const student = await User.findById(record.studentId).populate('parentId');
+        const student = await Student.findById(record.studentId).populate('parentId');
         if (student && student.parentId) {
           await sendNotification(student, student.parentId, classInfo);
         }
@@ -45,19 +47,23 @@ exports.takeAttendance = async (req, res) => {
   }
 };
 
-// Get Students by Class (Teacher)
+// Get Students by Class (Teacher) - FIXED VERSION
 exports.getStudentsByClass = async (req, res) => {
   try {
     const { class: className, section } = req.params;
     
-    const students = await User.find({
-      role: 'student',
+    // Using Student model instead of User model
+    const students = await Student.find({
       class: className,
       section: section,
       isActive: true
-    }).select('name rollNumber email');
+    }).select('name rollNumber email class section');
 
-    res.json({ success: true, students });
+    res.json({ 
+      success: true, 
+      students,
+      count: students.length 
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

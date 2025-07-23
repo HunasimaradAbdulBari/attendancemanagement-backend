@@ -1,5 +1,5 @@
 const Timetable = require('../models/Timetable');
-const User = require('../models/User');
+const Teacher = require('../models/Teacher'); // Import Teacher model instead of User
 
 // Get Timetable (Student/Teacher)
 exports.getTimetable = async (req, res) => {
@@ -55,21 +55,33 @@ exports.createTimetable = async (req, res) => {
   }
 };
 
-// Get Teacher's Classes
+// Get Teacher's Classes - FIXED VERSION
 exports.getTeacherClasses = async (req, res) => {
   try {
-    const teacherId = req.user.id;
-    const teacher = await User.findById(teacherId);
+    const teacherId = req.user.id; // This comes from your auth middleware
+    
+    // Use Teacher model instead of User model
+    const teacher = await Teacher.findById(teacherId);
 
-    if (!teacher || teacher.role !== 'teacher') {
-      return res.status(403).json({ message: 'Access denied' });
+    if (!teacher) {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+
+    if (!teacher.isActive) {
+      return res.status(403).json({ message: 'Teacher account is inactive' });
     }
 
     res.json({
       success: true,
-      assignedClasses: teacher.assignedClasses
+      assignedClasses: teacher.assignedClasses,
+      teacherInfo: {
+        name: teacher.name,
+        employeeId: teacher.employeeId,
+        subjects: teacher.subjects
+      }
     });
   } catch (error) {
+    console.error('Error in getTeacherClasses:', error);
     res.status(500).json({ message: error.message });
   }
 };

@@ -32,9 +32,16 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ message: 'Token is not valid' });
     }
 
-    req.user = { ...user.toObject(), userType: decoded.userType };
+    // Set the user object with both user data and userType
+    req.user = { 
+      id: user._id, // Make sure to set the id field
+      ...user.toObject(), 
+      userType: decoded.userType 
+    };
+    
     next();
   } catch (error) {
+    console.error('Auth middleware error:', error);
     res.status(401).json({ message: 'Token is not valid' });
   }
 };
