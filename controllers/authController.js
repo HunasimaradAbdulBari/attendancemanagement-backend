@@ -253,7 +253,7 @@ exports.registerStudent = async (req, res) => {
   }
 };
 
-// Get Profile (Updated for different user types)
+// Get Profile
 exports.getProfile = async (req, res) => {
   try {
     const { id, userType } = req.user;
@@ -272,6 +272,165 @@ exports.getProfile = async (req, res) => {
     }
     
     res.json({ success: true, user, userType });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Update Profile - NEW
+exports.updateProfile = async (req, res) => {
+  try {
+    const { id, userType } = req.user;
+    const updateData = req.body;
+    
+    // Remove password from update data if present (should be updated separately)
+    delete updateData.password;
+    delete updateData.email; // Prevent email updates
+    
+    let user;
+    let Model;
+
+    switch (userType) {
+      case 'student':
+        Model = Student;
+        break;
+      case 'teacher':
+        Model = Teacher;
+        break;
+      case 'parent':
+        Model = Parent;
+        break;
+    }
+
+    user = await Model.findByIdAndUpdate(id, updateData, { 
+      new: true, 
+      runValidators: true 
+    }).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Delete User Account - NEW
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id, userType } = req.user;
+    let Model;
+
+    switch (userType) {
+      case 'student':
+        Model = Student;
+        break;
+      case 'teacher':
+        Model = Teacher;
+        break;
+      case 'parent':
+        Model = Parent;
+        break;
+    }
+
+    // Soft delete by setting isActive to false
+    const user = await Model.findByIdAndUpdate(id, { isActive: false }, { new: true });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Account deactivated successfully'
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get All Students - NEW
+exports.getAllStudents = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, class: className, section } = req.query;
+    
+    let query = { isActive: true };
+    if (className) query.class = className;
+    if (section) query.section = section;
+
+    const students = await Student.find(query)
+      .populate('parentId', 'name phone email')
+      .select('-password')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ name: 1 });
+
+    const total = await Student.countDocuments(query);
+
+    res.json({
+      success: true,
+      students,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get All Teachers - NEW
+exports.getAllTeachers = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    
+    const teachers = await Teacher.find({ isActive: true })
+      .select('-password')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ name: 1 });
+
+    const total = await Teacher.countDocuments({ isActive: true });
+
+    res.json({
+      success: true,
+      teachers,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get All Parents - NEW
+exports.getAllParents = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    
+    const parents = await Parent.find({ isActive: true })
+      .populate('children', 'name rollNumber class section')
+      .select('-password')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ name: 1 });
+
+    const total = await Parent.countDocuments({ isActive: true });
+
+    res.json({
+      success: true,
+      parents,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

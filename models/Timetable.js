@@ -20,7 +20,7 @@ const timetableSchema = new mongoose.Schema({
       subject: String,
       teacher: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+        ref: 'Teacher' 
       },
       startTime: String,
       endTime: String
@@ -33,5 +33,8 @@ const timetableSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+
+timetableSchema.index({ class: 1, section: 1 }, { unique: true });
 
 module.exports = mongoose.model('Timetable', timetableSchema);
