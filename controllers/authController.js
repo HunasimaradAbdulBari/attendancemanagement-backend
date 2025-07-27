@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const Student = require('../models/student');
 const Teacher = require('../models/Teacher');
 const Parent = require('../models/Parent');
+const Admin = require('../models/Admin'); // Add Admin model
 
 // Generate JWT Token
 const generateToken = (id, userType) => {
@@ -10,12 +11,12 @@ const generateToken = (id, userType) => {
   });
 };
 
-// Login with User Type Selection
+// Login with User Type Selection (Updated with Admin support)
 exports.login = async (req, res) => {
   try {
     const { email, password, userType } = req.body;
 
-    if (!userType || !['student', 'teacher', 'parent'].includes(userType)) {
+    if (!userType || !['student', 'teacher', 'parent', 'admin'].includes(userType)) {
       return res.status(400).json({ message: 'Please select a valid user type' });
     }
 
@@ -32,6 +33,9 @@ exports.login = async (req, res) => {
       case 'parent':
         Model = Parent;
         break;
+      case 'admin':
+        Model = Admin;
+        break;
     }
 
     user = await Model.findOne({ email }).select('+password');
@@ -42,6 +46,12 @@ exports.login = async (req, res) => {
 
     if (!user.isActive) {
       return res.status(401).json({ message: 'Account is deactivated' });
+    }
+
+    // Update last login for admin
+    if (userType === 'admin') {
+      user.lastLogin = new Date();
+      await user.save();
     }
 
     const token = generateToken(user._id, userType);
@@ -67,6 +77,12 @@ exports.login = async (req, res) => {
         employeeId: user.employeeId,
         subjects: user.subjects,
         assignedClasses: user.assignedClasses
+      };
+    } else if (userType === 'admin') {
+      responseUser = {
+        ...responseUser,
+        employeeId: user.employeeId,
+        permissions: user.permissions
       };
     }
 
@@ -253,7 +269,7 @@ exports.registerStudent = async (req, res) => {
   }
 };
 
-// Get Profile
+// Get Profile (Updated with Admin support)
 exports.getProfile = async (req, res) => {
   try {
     const { id, userType } = req.user;
@@ -269,6 +285,9 @@ exports.getProfile = async (req, res) => {
       case 'parent':
         user = await Parent.findById(id).populate('children', 'name rollNumber class section');
         break;
+      case 'admin':
+        user = await Admin.findById(id);
+        break;
     }
     
     res.json({ success: true, user, userType });
@@ -277,7 +296,7 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// Update Profile - NEW
+// Update Profile (Updated with Admin support)
 exports.updateProfile = async (req, res) => {
   try {
     const { id, userType } = req.user;
@@ -300,6 +319,9 @@ exports.updateProfile = async (req, res) => {
       case 'parent':
         Model = Parent;
         break;
+      case 'admin':
+        Model = Admin;
+        break;
     }
 
     user = await Model.findByIdAndUpdate(id, updateData, { 
@@ -321,7 +343,7 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// Delete User Account - NEW
+// Delete User Account (Updated with Admin support)
 exports.deleteUser = async (req, res) => {
   try {
     const { id, userType } = req.user;
@@ -336,6 +358,9 @@ exports.deleteUser = async (req, res) => {
         break;
       case 'parent':
         Model = Parent;
+        break;
+      case 'admin':
+        Model = Admin;
         break;
     }
 
@@ -355,7 +380,7 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
-// Get All Students - NEW
+// Get All Students
 exports.getAllStudents = async (req, res) => {
   try {
     const { page = 1, limit = 10, class: className, section } = req.query;
@@ -385,7 +410,7 @@ exports.getAllStudents = async (req, res) => {
   }
 };
 
-// Get All Teachers - NEW
+// Get All Teachers
 exports.getAllTeachers = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -410,7 +435,7 @@ exports.getAllTeachers = async (req, res) => {
   }
 };
 
-// Get All Parents - NEW
+// Get All Parents
 exports.getAllParents = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
