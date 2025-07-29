@@ -4,46 +4,129 @@ const Teacher = require('../models/Teacher');
 const Parent = require('../models/Parent');
 const { sendNotification } = require('../utils/sendNotification');
 
-// Take Attendance (Teacher)
+// Updated AttendanceGrid.jsx submitAttendance function (for reference)
+/*
+  const submitAttendance = async () => {
+    setSubmitting(true);
+    try {
+      const attendanceArray = Object.values(attendanceData);
+
+      const payload = {
+        attendanceData: attendanceArray,
+        classInfo: {
+          class: classInfo.class,
+          section: classInfo.section,
+          subject: classInfo.subject,
+          period: classInfo.period,
+          date: new Date().toISOString().split('T')[0]
+        }
+      };
+
+      const response = await attendanceAPI.takeAttendance(payload);
+
+      if (response.data.success) {
+        alert(`✅ ${response.data.message}`);
+        
+        if (response.data.errors && response.data.errors.length > 0) {
+          console.warn('Some records had issues:', response.data.errors);
+          alert(`⚠️ Warning: ${response.data.errors.length} records had issues. Check console for details.`);
+        }
+
+        const absentStudents = attendanceArray.filter(record => record.status === 'absent');
+        if (absentStudents.length > 0) {
+          alert(`ℹ️ ${absentStudents.length} students marked absent. Notifications sent.`);
+        }
+      } else {
+        throw new Error(response.data.message || 'Unknown error occurred');
+      }
+    } catch (error) {
+      console.error('Error submitting attendance:', error);
+      
+      let errorMessage = 'Failed to submit attendance';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(`❌ ${errorMessage}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+*/
+
+// Take Attendance (Teacher) - FIXED VERSION
 exports.takeAttendance = async (req, res) => {
   try {
     const { attendanceData, classInfo } = req.body;
     const teacherId = req.user.id;
 
     const attendanceRecords = [];
+    const errors = [];
     
     for (const record of attendanceData) {
-      const attendance = new Attendance({
-        student: record.studentId,
-        teacher: teacherId,
-        class: classInfo.class,
-        section: classInfo.section,
-        subject: classInfo.subject,
-        date: new Date(classInfo.date),
-        status: record.status,
-        period: classInfo.period,
-        remarks: record.remarks
-      });
+      try {
+        // Use findOneAndUpdate with upsert to handle duplicates
+        const filter = {
+          student: record.studentId,
+          teacher: teacherId,
+          class: classInfo.class,
+          section: classInfo.section,
+          subject: classInfo.subject,
+          date: new Date(classInfo.date),
+          period: classInfo.period
+        };
 
-      await attendance.save();
-      attendanceRecords.push(attendance);
+        const updateData = {
+          ...filter,
+          status: record.status,
+          remarks: record.remarks || '',
+          updatedAt: new Date()
+        };
 
-      // Send notification if student is absent
-      if (record.status === 'absent') {
-        const student = await Student.findById(record.studentId).populate('parentId');
-        if (student && student.parentId) {
-          await sendNotification(student, student.parentId, classInfo);
+        const attendance = await Attendance.findOneAndUpdate(
+          filter,
+          updateData,
+          { 
+            upsert: true, 
+            new: true,
+            runValidators: true
+          }
+        );
+
+        attendanceRecords.push(attendance);
+
+        // Send notification if student is absent
+        if (record.status === 'absent') {
+          const student = await Student.findById(record.studentId).populate('parentId');
+          if (student && student.parentId) {
+            await sendNotification(student, student.parentId, classInfo);
+          }
         }
+      } catch (error) {
+        console.error(`Error processing attendance for student ${record.studentId}:`, error);
+        errors.push({
+          studentId: record.studentId,
+          error: error.message
+        });
       }
     }
 
+    // Return success even if some records had issues
     res.status(201).json({
       success: true,
-      message: 'Attendance recorded successfully',
-      records: attendanceRecords.length
+      message: `Attendance recorded successfully. Processed: ${attendanceRecords.length} records`,
+      records: attendanceRecords.length,
+      errors: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error in takeAttendance:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to record attendance',
+      error: error.message 
+    });
   }
 };
 
@@ -65,7 +148,12 @@ exports.getStudentsByClass = async (req, res) => {
       count: students.length 
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error in getStudentsByClass:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch students',
+      error: error.message 
+    });
   }
 };
 
@@ -103,7 +191,12 @@ exports.getStudentAttendance = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error in getStudentAttendance:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch student attendance',
+      error: error.message 
+    });
   }
 };
 
@@ -123,8 +216,16 @@ exports.getAttendanceReport = async (req, res) => {
       .populate('student', 'name rollNumber')
       .sort({ date: -1, period: 1 });
 
-    res.json({ success: true, records: attendanceRecords });
+    res.json({ 
+      success: true, 
+      records: attendanceRecords 
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error in getAttendanceReport:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch attendance report',
+      error: error.message 
+    });
   }
 };
