@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const Student = require('../models/student');
 const Teacher = require('../models/Teacher');
 const Parent = require('../models/Parent');
-const Admin = require('../models/Admin'); // Add Admin model
+const Admin = require('../models/Admin');
 
 // Generate JWT Token
 const generateToken = (id, userType) => {
@@ -16,8 +16,18 @@ exports.login = async (req, res) => {
   try {
     const { email, password, userType } = req.body;
 
-    if (!userType || !['student', 'teacher', 'parent', 'admin'].includes(userType)) {
-      return res.status(400).json({ message: 'Please select a valid user type' });
+    if (!email || !password || !userType) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email, password, and user type are required' 
+      });
+    }
+
+    if (!['student', 'teacher', 'parent', 'admin'].includes(userType)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Please select a valid user type' 
+      });
     }
 
     let user;
@@ -41,11 +51,17 @@ exports.login = async (req, res) => {
     user = await Model.findOne({ email }).select('+password');
     
     if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
     }
 
     if (!user.isActive) {
-      return res.status(401).json({ message: 'Account is deactivated' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Account is deactivated' 
+      });
     }
 
     // Update last login for admin
@@ -75,14 +91,20 @@ exports.login = async (req, res) => {
       responseUser = {
         ...responseUser,
         employeeId: user.employeeId,
-        subjects: user.subjects,
-        assignedClasses: user.assignedClasses
+        subjects: user.subjects || [],
+        assignedClasses: user.assignedClasses || []
       };
     } else if (userType === 'admin') {
       responseUser = {
         ...responseUser,
         employeeId: user.employeeId,
-        permissions: user.permissions
+        permissions: user.permissions || []
+      };
+    } else if (userType === 'parent') {
+      responseUser = {
+        ...responseUser,
+        phone: user.phone,
+        children: user.children || []
       };
     }
 
@@ -92,7 +114,11 @@ exports.login = async (req, res) => {
       user: responseUser
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -110,10 +136,28 @@ exports.registerParent = async (req, res) => {
       relation
     } = req.body;
 
+    // Validation
+    if (!name || !email || !password || !phone || !address || !occupation || !relation) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'All required fields must be provided' 
+      });
+    }
+
+    if (!['father', 'mother', 'guardian'].includes(relation)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Relation must be father, mother, or guardian' 
+      });
+    }
+
     // Check if parent exists
     const existingParent = await Parent.findOne({ email });
     if (existingParent) {
-      return res.status(400).json({ message: 'Parent already exists with this email' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Parent already exists with this email' 
+      });
     }
 
     const parent = new Parent({
@@ -140,7 +184,17 @@ exports.registerParent = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Register parent error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email already exists' 
+      });
+    }
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -160,12 +214,21 @@ exports.registerTeacher = async (req, res) => {
       experience
     } = req.body;
 
+    // Validation
+    if (!name || !email || !password || !employeeId || !phone || !address || !qualification) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'All required fields must be provided' 
+      });
+    }
+
     // Check if teacher exists
     const existingTeacher = await Teacher.findOne({ 
       $or: [{ email }, { employeeId }] 
     });
     if (existingTeacher) {
       return res.status(400).json({ 
+        success: false,
         message: 'Teacher already exists with this email or employee ID' 
       });
     }
@@ -177,10 +240,10 @@ exports.registerTeacher = async (req, res) => {
       employeeId,
       phone,
       address,
-      subjects,
-      assignedClasses,
+      subjects: subjects || [],
+      assignedClasses: assignedClasses || [],
       qualification,
-      experience
+      experience: experience || 0
     });
 
     await teacher.save();
@@ -197,7 +260,17 @@ exports.registerTeacher = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Register teacher error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email or Employee ID already exists' 
+      });
+    }
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -217,12 +290,21 @@ exports.registerStudent = async (req, res) => {
       dateOfBirth
     } = req.body;
 
+    // Validation
+    if (!name || !email || !password || !rollNumber || !studentClass || !section || !parentId || !phone || !address || !dateOfBirth) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'All required fields must be provided' 
+      });
+    }
+
     // Check if student exists
     const existingStudent = await Student.findOne({ 
       $or: [{ email }, { rollNumber }] 
     });
     if (existingStudent) {
       return res.status(400).json({ 
+        success: false,
         message: 'Student already exists with this email or roll number' 
       });
     }
@@ -230,7 +312,10 @@ exports.registerStudent = async (req, res) => {
     // Verify parent exists
     const parent = await Parent.findById(parentId);
     if (!parent) {
-      return res.status(400).json({ message: 'Parent not found' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Parent not found' 
+      });
     }
 
     const student = new Student({
@@ -243,14 +328,16 @@ exports.registerStudent = async (req, res) => {
       parentId,
       phone,
       address,
-      dateOfBirth
+      dateOfBirth: new Date(dateOfBirth)
     });
 
     await student.save();
 
     // Add student to parent's children array
-    parent.children.push(student._id);
-    await parent.save();
+    if (!parent.children.includes(student._id)) {
+      parent.children.push(student._id);
+      await parent.save();
+    }
 
     res.status(201).json({
       success: true,
@@ -265,12 +352,21 @@ exports.registerStudent = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Register student error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email or Roll Number already exists' 
+      });
+    }
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
 // Get Profile (Updated with Admin support)
-// Improved getProfile function
 exports.getProfile = async (req, res) => {
   try {
     const { id, userType } = req.user;
@@ -278,36 +374,42 @@ exports.getProfile = async (req, res) => {
 
     switch (userType) {
       case 'student':
-        user = await Student.findById(id).populate({
-          path: 'parentId',
-          select: 'name email phone',
-          match: { isActive: true }
-        });
+        user = await Student.findById(id).populate('parentId', 'name email phone');
         break;
       case 'teacher':
         user = await Teacher.findById(id);
         break;
       case 'parent':
-        user = await Parent.findById(id).populate({
-          path: 'children',
-          select: 'name rollNumber class section',
-          match: { isActive: true }
-        });
+        user = await Parent.findById(id).populate('children', 'name rollNumber class section');
         break;
       case 'admin':
         user = await Admin.findById(id);
         break;
       default:
-        return res.status(400).json({ message: 'Invalid user type' });
+        return res.status(400).json({ 
+          success: false,
+          message: 'Invalid user type' 
+        });
     }
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
     }
     
-    res.json({ success: true, user, userType });
+    res.json({ 
+      success: true, 
+      user, 
+      userType 
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get profile error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -317,9 +419,11 @@ exports.updateProfile = async (req, res) => {
     const { id, userType } = req.user;
     const updateData = req.body;
     
-    // Remove password from update data if present (should be updated separately)
+    // Remove sensitive fields from update data
     delete updateData.password;
-    delete updateData.email; // Prevent email updates
+    delete updateData.email;
+    delete updateData._id;
+    delete updateData.__v;
     
     let user;
     let Model;
@@ -337,6 +441,11 @@ exports.updateProfile = async (req, res) => {
       case 'admin':
         Model = Admin;
         break;
+      default:
+        return res.status(400).json({ 
+          success: false,
+          message: 'Invalid user type' 
+        });
     }
 
     user = await Model.findByIdAndUpdate(id, updateData, { 
@@ -345,7 +454,10 @@ exports.updateProfile = async (req, res) => {
     }).select('-password');
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
     }
 
     res.json({
@@ -354,7 +466,11 @@ exports.updateProfile = async (req, res) => {
       user
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Update profile error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -377,13 +493,21 @@ exports.deleteUser = async (req, res) => {
       case 'admin':
         Model = Admin;
         break;
+      default:
+        return res.status(400).json({ 
+          success: false,
+          message: 'Invalid user type' 
+        });
     }
 
     // Soft delete by setting isActive to false
     const user = await Model.findByIdAndUpdate(id, { isActive: false }, { new: true });
     
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
     }
 
     res.json({
@@ -391,7 +515,11 @@ exports.deleteUser = async (req, res) => {
       message: 'Account deactivated successfully'
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Delete user error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -415,13 +543,23 @@ exports.getAllStudents = async (req, res) => {
 
     res.json({
       success: true,
-      students,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      total
+      data: {
+        students,
+        pagination: {
+          totalPages: Math.ceil(total / limit),
+          currentPage: parseInt(page),
+          total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get all students error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -440,13 +578,23 @@ exports.getAllTeachers = async (req, res) => {
 
     res.json({
       success: true,
-      teachers,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      total
+      data: {
+        teachers,
+        pagination: {
+          totalPages: Math.ceil(total / limit),
+          currentPage: parseInt(page),
+          total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get all teachers error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -466,12 +614,22 @@ exports.getAllParents = async (req, res) => {
 
     res.json({
       success: true,
-      parents,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      total
+      data: {
+        parents,
+        pagination: {
+          totalPages: Math.ceil(total / limit),
+          currentPage: parseInt(page),
+          total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get all parents error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };

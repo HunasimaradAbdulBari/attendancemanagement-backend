@@ -16,14 +16,27 @@ exports.adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email and password are required' 
+      });
+    }
+
     const admin = await Admin.findOne({ email }).select('+password');
     
     if (!admin || !(await admin.comparePassword(password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
     }
 
     if (!admin.isActive) {
-      return res.status(401).json({ message: 'Account is deactivated' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Account is deactivated' 
+      });
     }
 
     // Update last login
@@ -45,7 +58,11 @@ exports.adminLogin = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Admin login error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -62,6 +79,14 @@ exports.createAdmin = async (req, res) => {
       permissions
     } = req.body;
 
+    // Validation
+    if (!name || !email || !password || !employeeId || !phone || !address) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'All required fields must be provided' 
+      });
+    }
+
     // Check if admin exists
     const existingAdmin = await Admin.findOne({ 
       $or: [{ email }, { employeeId }] 
@@ -69,6 +94,7 @@ exports.createAdmin = async (req, res) => {
     
     if (existingAdmin) {
       return res.status(400).json({ 
+        success: false,
         message: 'Admin already exists with this email or employee ID' 
       });
     }
@@ -97,7 +123,17 @@ exports.createAdmin = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Create admin error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email or Employee ID already exists' 
+      });
+    }
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -143,7 +179,7 @@ exports.getDashboardStats = async (req, res) => {
 
     res.json({
       success: true,
-      stats: {
+      data: {
         overview: {
           totalStudents,
           totalTeachers,
@@ -161,7 +197,11 @@ exports.getDashboardStats = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -170,6 +210,13 @@ exports.bulkCreateStudents = async (req, res) => {
   try {
     const { students } = req.body;
     
+    if (!students || !Array.isArray(students) || students.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Students array is required and must not be empty'
+      });
+    }
+
     const results = {
       created: [],
       errors: []
@@ -177,6 +224,16 @@ exports.bulkCreateStudents = async (req, res) => {
 
     for (const studentData of students) {
       try {
+        // Validate required fields
+        if (!studentData.name || !studentData.email || !studentData.rollNumber || 
+            !studentData.class || !studentData.section || !studentData.parentId) {
+          results.errors.push({
+            data: studentData,
+            error: 'Missing required fields (name, email, rollNumber, class, section, parentId)'
+          });
+          continue;
+        }
+
         // Check if student exists
         const existingStudent = await Student.findOne({ 
           $or: [{ email: studentData.email }, { rollNumber: studentData.rollNumber }] 
@@ -200,19 +257,29 @@ exports.bulkCreateStudents = async (req, res) => {
           continue;
         }
 
-        const student = new Student(studentData);
+        const student = new Student({
+          ...studentData,
+          password: studentData.password || 'defaultPassword123',
+          dateOfBirth: studentData.dateOfBirth ? new Date(studentData.dateOfBirth) : new Date()
+        });
+        
         await student.save();
 
         // Add student to parent's children array
-        parent.children.push(student._id);
-        await parent.save();
+        if (!parent.children.includes(student._id)) {
+          parent.children.push(student._id);
+          await parent.save();
+        }
 
         results.created.push({
           id: student._id,
           name: student.name,
-          rollNumber: student.rollNumber
+          rollNumber: student.rollNumber,
+          class: student.class,
+          section: student.section
         });
       } catch (error) {
+        console.error('Error creating student:', error);
         results.errors.push({
           data: studentData,
           error: error.message
@@ -223,10 +290,21 @@ exports.bulkCreateStudents = async (req, res) => {
     res.json({
       success: true,
       message: `Bulk operation completed. Created: ${results.created.length}, Errors: ${results.errors.length}`,
-      results
+      data: {
+        results,
+        summary: {
+          totalProcessed: students.length,
+          successful: results.created.length,
+          failed: results.errors.length
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Bulk create students error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -246,15 +324,22 @@ exports.getSystemSettings = async (req, res) => {
         smsEnabled: false,
         parentNotifications: true,
         teacherNotifications: true
-      }
+      },
+      lastUpdated: new Date()
     };
 
     res.json({
       success: true,
-      settings
+      data: {
+        settings
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get system settings error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 
@@ -262,15 +347,32 @@ exports.updateSystemSettings = async (req, res) => {
   try {
     const { settings } = req.body;
     
+    if (!settings) {
+      return res.status(400).json({
+        success: false,
+        message: 'Settings object is required'
+      });
+    }
+    
     // This would typically update a settings collection
-    // For now, just return success
+    // For now, just return success with updated timestamp
+    const updatedSettings = {
+      ...settings,
+      lastUpdated: new Date()
+    };
     
     res.json({
       success: true,
       message: 'System settings updated successfully',
-      settings
+      data: {
+        settings: updatedSettings
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Update system settings error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };

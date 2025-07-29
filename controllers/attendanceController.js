@@ -1,131 +1,111 @@
 const Attendance = require('../models/Attendance');
-const Student = require('../models/student'); // Note: lowercase 's' as per your file
+const Student = require('../models/student');
 const Teacher = require('../models/Teacher');
 const Parent = require('../models/Parent');
 const { sendNotification } = require('../utils/sendNotification');
 
-// Updated AttendanceGrid.jsx submitAttendance function (for reference)
-/*
-  const submitAttendance = async () => {
-    setSubmitting(true);
-    try {
-      const attendanceArray = Object.values(attendanceData);
-
-      const payload = {
-        attendanceData: attendanceArray,
-        classInfo: {
-          class: classInfo.class,
-          section: classInfo.section,
-          subject: classInfo.subject,
-          period: classInfo.period,
-          date: new Date().toISOString().split('T')[0]
-        }
-      };
-
-      const response = await attendanceAPI.takeAttendance(payload);
-
-      if (response.data.success) {
-        alert(`✅ ${response.data.message}`);
-        
-        if (response.data.errors && response.data.errors.length > 0) {
-          console.warn('Some records had issues:', response.data.errors);
-          alert(`⚠️ Warning: ${response.data.errors.length} records had issues. Check console for details.`);
-        }
-
-        const absentStudents = attendanceArray.filter(record => record.status === 'absent');
-        if (absentStudents.length > 0) {
-          alert(`ℹ️ ${absentStudents.length} students marked absent. Notifications sent.`);
-        }
-      } else {
-        throw new Error(response.data.message || 'Unknown error occurred');
-      }
-    } catch (error) {
-      console.error('Error submitting attendance:', error);
-      
-      let errorMessage = 'Failed to submit attendance';
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      alert(`❌ ${errorMessage}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-*/
-
-// Take Attendance (Teacher) - FIXED VERSION
+// Take Attendance (Teacher)
 exports.takeAttendance = async (req, res) => {
   try {
     const { attendanceData, classInfo } = req.body;
     const teacherId = req.user.id;
+
+    if (!attendanceData || !Array.isArray(attendanceData) || attendanceData.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Attendance data is required and must be a non-empty array' 
+      });
+    }
+
+    if (!classInfo || !classInfo.class || !classInfo.section || !classInfo.subject || !classInfo.date) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Class information (class, section, subject, date) is required' 
+      });
+    }
 
     const attendanceRecords = [];
     const errors = [];
     
     for (const record of attendanceData) {
       try {
-        // Use findOneAndUpdate with upsert to handle duplicates
-        const filter = {
+        if (!record.studentId || !record.status) {
+          errors.push({ studentId: record.studentId, error: 'Student ID and status are required' });
+          continue;
+        }
+
+        // Check if attendance already exists for this student, date, and period
+        const existingAttendance = await Attendance.findOne({
           student: record.studentId,
-          teacher: teacherId,
-          class: classInfo.class,
-          section: classInfo.section,
-          subject: classInfo.subject,
           date: new Date(classInfo.date),
-          period: classInfo.period
-        };
+          period: classInfo.period || 1,
+          subject: classInfo.subject
+        });
 
-        const updateData = {
-          ...filter,
-          status: record.status,
-          remarks: record.remarks || '',
-          updatedAt: new Date()
-        };
+        if (existingAttendance) {
+          // Update existing attendance
+          existingAttendance.status = record.status;
+          existingAttendance.remarks = record.remarks || '';
+          existingAttendance.teacher = teacherId;
+          await existingAttendance.save();
+          attendanceRecords.push(existingAttendance);
+        } else {
+          // Create new attendance record
+          const attendance = new Attendance({
+            student: record.studentId,
+            teacher: teacherId,
+            class: classInfo.class,
+            section: classInfo.section,
+            subject: classInfo.subject,
+            date: new Date(classInfo.date),
+            status: record.status,
+            period: classInfo.period || 1,
+            remarks: record.remarks || ''
+          });
 
-        const attendance = await Attendance.findOneAndUpdate(
-          filter,
-          updateData,
-          { 
-            upsert: true, 
-            new: true,
-            runValidators: true
-          }
-        );
-
-        attendanceRecords.push(attendance);
+          await attendance.save();
+          attendanceRecords.push(attendance);
+        }
 
         // Send notification if student is absent
         if (record.status === 'absent') {
-          const student = await Student.findById(record.studentId).populate('parentId');
-          if (student && student.parentId) {
-            await sendNotification(student, student.parentId, classInfo);
+          try {
+            const student = await Student.findById(record.studentId).populate('parentId');
+            if (student && student.parentId) {
+              await sendNotification(student, student.parentId, classInfo);
+            }
+          } catch (notificationError) {
+            console.error('Notification error for student:', record.studentId, notificationError);
+            // Don't fail the entire request for notification errors
           }
         }
-      } catch (error) {
-        console.error(`Error processing attendance for student ${record.studentId}:`, error);
-        errors.push({
-          studentId: record.studentId,
-          error: error.message
-        });
+      } catch (recordError) {
+        console.error('Error processing attendance record:', recordError);
+        errors.push({ studentId: record.studentId, error: recordError.message });
       }
     }
 
-    // Return success even if some records had issues
+    if (attendanceRecords.length === 0 && errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to record any attendance',
+        errors: errors
+      });
+    }
+
     res.status(201).json({
       success: true,
-      message: `Attendance recorded successfully. Processed: ${attendanceRecords.length} records`,
-      records: attendanceRecords.length,
-      errors: errors.length > 0 ? errors : undefined
+      message: `Attendance recorded successfully for ${attendanceRecords.length} students`,
+      data: {
+        recordsCreated: attendanceRecords.length,
+        errors: errors.length > 0 ? errors : undefined
+      }
     });
   } catch (error) {
-    console.error('Error in takeAttendance:', error);
+    console.error('Error taking attendance:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to record attendance',
-      error: error.message 
+      message: error.message 
     });
   }
 };
@@ -135,24 +115,33 @@ exports.getStudentsByClass = async (req, res) => {
   try {
     const { class: className, section } = req.params;
     
-    // Using Student model instead of User model
+    if (!className || !section) {
+      return res.status(400).json({
+        success: false,
+        message: 'Class and section parameters are required'
+      });
+    }
+
     const students = await Student.find({
       class: className,
       section: section,
       isActive: true
-    }).select('name rollNumber email class section');
+    })
+    .select('name rollNumber email class section')
+    .sort({ rollNumber: 1 });
 
     res.json({ 
       success: true, 
-      students,
-      count: students.length 
+      data: {
+        students: students,
+        count: students.length
+      }
     });
   } catch (error) {
-    console.error('Error in getStudentsByClass:', error);
+    console.error('Error getting students by class:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch students',
-      error: error.message 
+      message: error.message 
     });
   }
 };
@@ -162,6 +151,22 @@ exports.getStudentAttendance = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { month, year } = req.query;
+
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student ID is required'
+      });
+    }
+
+    // Verify student exists
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
 
     let query = { student: studentId };
     
@@ -173,29 +178,31 @@ exports.getStudentAttendance = async (req, res) => {
 
     const attendanceRecords = await Attendance.find(query)
       .populate('teacher', 'name')
-      .sort({ date: -1 });
+      .sort({ date: -1, period: 1 });
 
-    // Calculate attendance percentage
+    // Calculate attendance statistics
     const totalClasses = attendanceRecords.length;
     const presentClasses = attendanceRecords.filter(record => record.status === 'present').length;
+    const absentClasses = totalClasses - presentClasses;
     const attendancePercentage = totalClasses > 0 ? (presentClasses / totalClasses) * 100 : 0;
 
     res.json({
       success: true,
-      attendance: attendanceRecords,
-      statistics: {
-        totalClasses,
-        presentClasses,
-        absentClasses: totalClasses - presentClasses,
-        attendancePercentage: Math.round(attendancePercentage * 100) / 100
+      data: {
+        attendance: attendanceRecords,
+        statistics: {
+          totalClasses,
+          presentClasses,
+          absentClasses,
+          attendancePercentage: Math.round(attendancePercentage * 100) / 100
+        }
       }
     });
   } catch (error) {
-    console.error('Error in getStudentAttendance:', error);
+    console.error('Error getting student attendance:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch student attendance',
-      error: error.message 
+      message: error.message 
     });
   }
 };
@@ -203,29 +210,48 @@ exports.getStudentAttendance = async (req, res) => {
 // Get Attendance Report (Teacher)
 exports.getAttendanceReport = async (req, res) => {
   try {
-    const { class: className, section, date } = req.query;
+    const { class: className, section, date, subject } = req.query;
     const teacherId = req.user.id;
 
     let query = { teacher: teacherId };
     
     if (className) query.class = className;
     if (section) query.section = section;
-    if (date) query.date = new Date(date);
+    if (subject) query.subject = subject;
+    if (date) {
+      const queryDate = new Date(date);
+      const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
+      query.date = { $gte: startOfDay, $lte: endOfDay };
+    }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('student', 'name rollNumber')
+      .populate('student', 'name rollNumber class section')
       .sort({ date: -1, period: 1 });
+
+    // Group by date for better organization
+    const groupedRecords = {};
+    attendanceRecords.forEach(record => {
+      const dateKey = record.date.toDateString();
+      if (!groupedRecords[dateKey]) {
+        groupedRecords[dateKey] = [];
+      }
+      groupedRecords[dateKey].push(record);
+    });
 
     res.json({ 
       success: true, 
-      records: attendanceRecords 
+      data: {
+        records: attendanceRecords,
+        groupedRecords: groupedRecords,
+        totalRecords: attendanceRecords.length
+      }
     });
   } catch (error) {
-    console.error('Error in getAttendanceReport:', error);
+    console.error('Error getting attendance report:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch attendance report',
-      error: error.message 
+      message: error.message 
     });
   }
 };

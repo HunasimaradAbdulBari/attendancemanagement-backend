@@ -21,14 +21,14 @@ router.post('/register/parent', registerParent);
 router.post('/register/teacher', registerTeacher);
 router.post('/register/student', registerStudent);
 
-// Profile routes
+// Profile routes (require authentication)
 router.get('/profile', authMiddleware, getProfile);
 router.put('/profile', authMiddleware, updateProfile);
 router.delete('/profile', authMiddleware, deleteUser);
 
-// Admin routes for getting all users
-router.get('/students', authMiddleware, roleMiddleware('teacher'), getAllStudents);
-router.get('/teachers', authMiddleware, roleMiddleware('teacher'), getAllTeachers);
-router.get('/parents', authMiddleware, roleMiddleware('teacher'), getAllParents);
+// Admin/Teacher routes for getting all users (updated permissions)
+router.get('/students', authMiddleware, roleMiddleware('teacher', 'admin'), getAllStudents);
+router.get('/teachers', authMiddleware, roleMiddleware('admin'), getAllTeachers);
+router.get('/parents', authMiddleware, roleMiddleware('admin'), getAllParents);
 
 module.exports = router;

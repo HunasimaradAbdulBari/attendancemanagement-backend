@@ -2,56 +2,107 @@ const jwt = require('jsonwebtoken');
 const Student = require('../models/student');
 const Teacher = require('../models/Teacher');
 const Parent = require('../models/Parent');
-const Admin = require('../models/Admin'); // Add Admin model
+const Admin = require('../models/Admin');
 
 const authMiddleware = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const authHeader = req.header('Authorization');
     
-    if (!token) {
-      return res.status(401).json({ message: 'No token provided' });
+    if (!authHeader) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'No authorization header provided' 
+      });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const token = authHeader.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'No token provided' 
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtError) {
+      console.error('JWT verification error:', jwtError);
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid or expired token' 
+      });
+    }
+
+    if (!decoded.id || !decoded.userType) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid token payload' 
+      });
+    }
+
     let user;
+    let Model;
 
     switch (decoded.userType) {
       case 'student':
-        user = await Student.findById(decoded.id).select('-password');
+        Model = Student;
         break;
       case 'teacher':
-        user = await Teacher.findById(decoded.id).select('-password');
+        Model = Teacher;
         break;
       case 'parent':
-        user = await Parent.findById(decoded.id).select('-password');
+        Model = Parent;
         break;
       case 'admin':
-        user = await Admin.findById(decoded.id).select('-password');
+        Model = Admin;
         break;
       default:
-        return res.status(401).json({ message: 'Invalid user type' });
+        return res.status(401).json({ 
+          success: false,
+          message: 'Invalid user type in token' 
+        });
+    }
+
+    try {
+      user = await Model.findById(decoded.id).select('-password');
+    } catch (dbError) {
+      console.error('Database error in auth middleware:', dbError);
+      return res.status(500).json({ 
+        success: false,
+        message: 'Database error during authentication' 
+      });
     }
     
     if (!user) {
-      return res.status(401).json({ message: 'Token is not valid' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'User not found' 
+      });
     }
 
     if (!user.isActive) {
-      return res.status(401).json({ message: 'Account is deactivated' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Account is deactivated' 
+      });
     }
 
     // Set the user object with both user data and userType
     req.user = { 
-  ...user.toObject(), 
-  id: user._id.toString(),  // ✅ explicitly add `id`
-  userType: decoded.userType 
-};
-
+      id: user._id.toString(), // Ensure string format for consistency
+      ...user.toObject(), 
+      userType: decoded.userType 
+    };
     
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    res.status(401).json({ message: 'Token is not valid' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Authentication error' 
+    });
   }
 };
 

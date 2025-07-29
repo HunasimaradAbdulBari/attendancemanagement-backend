@@ -1,123 +1,181 @@
-// Utility function to send notifications
-// This is a placeholder implementation for the notification system
-// In a real application, you would integrate with services like:
-// - Email services (SendGrid, Nodemailer, AWS SES)
-// - SMS services (Twilio, AWS SNS)
-// - Push notifications (Firebase Cloud Messaging)
+// Enhanced notification service with better error handling and logging
+// You can integrate with Firebase, Twilio, SendGrid, or any other service
 
 const sendNotification = async (student, parent, classInfo) => {
   try {
-    // Mock notification sending
-    console.log('Sending notification:', {
-      studentName: student.name,
-      parentEmail: parent.email,
-      parentPhone: parent.phone,
+    if (!student || !parent || !classInfo) {
+      throw new Error('Missing required parameters: student, parent, or classInfo');
+    }
+
+    // Validate required fields
+    if (!student.name || !parent.email || !classInfo.subject || !classInfo.date) {
+      throw new Error('Missing required fields in student, parent, or classInfo objects');
+    }
+
+    // Format date for better readability
+    const formattedDate = new Date(classInfo.date).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    // Create notification data
+    const notificationData = {
+      to: parent.email,
+      subject: `Attendance Alert - ${student.name}`,
+      message: `Dear Parent,\n\nYour child ${student.name} was marked absent in ${classInfo.subject} class on ${formattedDate}.\n\nClass: ${classInfo.class}-${classInfo.section}\nSubject: ${classInfo.subject}\nPeriod: ${classInfo.period || 'N/A'}\nDate: ${formattedDate}\n\nPlease contact the school if you have any questions.\n\nBest regards,\nSchool Administration`,
+      student: {
+        name: student.name,
+        rollNumber: student.rollNumber,
+        class: student.class,
+        section: student.section
+      },
+      parent: {
+        name: parent.name,
+        email: parent.email,
+        phone: parent.phone
+      },
       classInfo: {
         class: classInfo.class,
         section: classInfo.section,
         subject: classInfo.subject,
-        date: classInfo.date,
-        period: classInfo.period
+        period: classInfo.period,
+        date: classInfo.date
       },
-      message: `Your child ${student.name} was marked absent in ${classInfo.subject} class on ${new Date(classInfo.date).toDateString()}.`
+      timestamp: new Date(),
+      type: 'absence_alert'
+    };
+
+    // Log the notification for debugging
+    console.log('📧 Sending absence notification:', {
+      student: student.name,
+      parent: parent.email,
+      subject: classInfo.subject,
+      date: formattedDate
     });
 
-    // Simulate email sending
-    await sendEmail(parent.email, {
-      subject: `Attendance Alert - ${student.name}`,
-      body: `Dear Parent,\n\nThis is to inform you that your child ${student.name} (Roll No: ${student.rollNumber}) was marked absent in ${classInfo.subject} class on ${new Date(classInfo.date).toDateString()}, Period ${classInfo.period}.\n\nPlease ensure regular attendance for better academic performance.\n\nThank you,\nSchool Administration`
+    // Here you would integrate with actual notification services
+    // Examples:
+
+    // 1. Email Service (SendGrid, Nodemailer, etc.)
+    // await emailService.send({
+    //   to: notificationData.to,
+    //   subject: notificationData.subject,
+    //   html: generateEmailTemplate(notificationData)
+    // });
+
+    // 2. SMS Service (Twilio, etc.)
+    // if (parent.phone) {
+    //   await smsService.send({
+    //     to: parent.phone,
+    //     message: `${student.name} was absent in ${classInfo.subject} on ${formattedDate}. Please check your email for details.`
+    //   });
+    // }
+
+    // 3. Push Notification Service (Firebase, etc.)
+    // await pushService.send({
+    //   userId: parent._id,
+    //   title: 'Attendance Alert',
+    //   body: `${student.name} was absent in ${classInfo.subject}`,
+    //   data: notificationData
+    // });
+
+    // 4. In-app Notification (save to database)
+    // await Notification.create({
+    //   userId: parent._id,
+    //   userType: 'parent',
+    //   type: 'absence_alert',
+    //   title: 'Attendance Alert',
+    //   message: notificationData.message,
+    //   data: notificationData,
+    //   isRead: false
+    // });
+
+    // Simulate successful notification
+    await new Promise(resolve => setTimeout(resolve, 100)); // Simulate async operation
+
+    console.log('✅ Notification sent successfully to:', parent.email);
+    
+    return { 
+      success: true, 
+      message: 'Notification sent successfully',
+      data: {
+        recipientEmail: parent.email,
+        studentName: student.name,
+        subject: classInfo.subject,
+        date: formattedDate,
+        sentAt: new Date()
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Notification error:', {
+      error: error.message,
+      student: student?.name,
+      parent: parent?.email,
+      subject: classInfo?.subject
     });
-
-    // Simulate SMS sending (if phone number exists)
-    if (parent.phone) {
-      await sendSMS(parent.phone, `Alert: ${student.name} was absent in ${classInfo.subject} class today. Please check with your child.`);
-    }
-
-    return { success: true, message: 'Notification sent successfully' };
-  } catch (error) {
-    console.error('Error sending notification:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// Mock email function
-const sendEmail = async (email, { subject, body }) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(`Email sent to ${email}: ${subject}`);
-      resolve({ success: true });
-    }, 100);
-  });
-};
-
-// Mock SMS function
-const sendSMS = async (phone, message) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(`SMS sent to ${phone}: ${message}`);
-      resolve({ success: true });
-    }, 100);
-  });
-};
-
-// Function to send bulk notifications
-const sendBulkNotifications = async (notifications) => {
-  const results = [];
-  
-  for (const notification of notifications) {
-    try {
-      const result = await sendNotification(
-        notification.student,
-        notification.parent,
-        notification.classInfo
-      );
-      results.push({ ...notification, result });
-    } catch (error) {
-      results.push({ 
-        ...notification, 
-        result: { success: false, error: error.message } 
-      });
-    }
-  }
-  
-  return results;
-};
-
-// Function to send announcement notifications
-const sendAnnouncementNotification = async (announcement, recipients) => {
-  try {
-    const notifications = [];
     
-    for (const recipient of recipients) {
-      if (recipient.email) {
-        await sendEmail(recipient.email, {
-          subject: `New Announcement: ${announcement.title}`,
-          body: `Dear ${recipient.name},\n\nA new announcement has been posted:\n\nTitle: ${announcement.title}\n\nContent: ${announcement.content}\n\nPriority: ${announcement.priority.toUpperCase()}\n\nPosted by: ${announcement.author?.name}\nDate: ${new Date(announcement.publishDate).toDateString()}\n\nThank you,\nSchool Administration`
-        });
+    return { 
+      success: false, 
+      error: error.message,
+      data: {
+        studentName: student?.name,
+        parentEmail: parent?.email,
+        subject: classInfo?.subject,
+        failedAt: new Date()
       }
-      
-      if (recipient.phone && announcement.priority === 'high') {
-        await sendSMS(recipient.phone, `Important announcement: ${announcement.title}. Please check the school portal for details.`);
-      }
-      
-      notifications.push({
-        recipient: recipient._id,
-        type: 'announcement',
-        sent: true
-      });
-    }
-    
-    return { success: true, notifications };
-  } catch (error) {
-    console.error('Error sending announcement notifications:', error);
-    return { success: false, error: error.message };
+    };
   }
+};
+
+// Helper function to generate email template (you can customize this)
+const generateEmailTemplate = (data) => {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #f4f4f4; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .footer { background-color: #f4f4f4; padding: 10px; text-align: center; font-size: 12px; }
+        .alert { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 15px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>Attendance Alert</h2>
+        </div>
+        <div class="content">
+          <p>Dear Parent,</p>
+          <div class="alert">
+            <strong>Absence Notification</strong><br>
+            Your child <strong>${data.student.name}</strong> was marked absent.
+          </div>
+          <p><strong>Details:</strong></p>
+          <ul>
+            <li>Student: ${data.student.name}</li>
+            <li>Class: ${data.classInfo.class}-${data.classInfo.section}</li>
+            <li>Subject: ${data.classInfo.subject}</li>
+            <li>Date: ${new Date(data.classInfo.date).toLocaleDateString()}</li>
+            <li>Period: ${data.classInfo.period || 'N/A'}</li>
+          </ul>
+          <p>If you have any questions, please contact the school administration.</p>
+        </div>
+        <div class="footer">
+          <p>This is an automated message from the School Attendance System.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
 };
 
 module.exports = {
   sendNotification,
-  sendBulkNotifications,
-  sendAnnouncementNotification,
-  sendEmail,
-  sendSMS
+  generateEmailTemplate
 };
