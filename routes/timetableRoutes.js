@@ -9,9 +9,12 @@ const {
 const authMiddleware = require('../middlewares/authMiddleware');
 const roleMiddleware = require('../middlewares/roleMiddleware');
 
-router.get('/:class/:section', authMiddleware, getTimetable);
-router.post('/', createTimetable);
+// ✅ Specific routes first!
 router.get('/teacher/classes', authMiddleware, roleMiddleware('teacher'), getTeacherClasses);
 router.get('/holidays/:class/:section', authMiddleware, getHolidays);
+
+// ✅ Then the generic ones
+router.get('/:class/:section', authMiddleware, getTimetable);
+router.post('/', createTimetable);
 
 module.exports = router;
